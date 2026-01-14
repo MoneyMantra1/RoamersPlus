@@ -1,0 +1,41 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="MIT"
+issueTrackerURL="https://github.com/yourusername/roamersplus/issues"
+
+[[mods]]
+modId="roamersplus"
+version="${file.jarVersion}"
+displayName="RoamersPlus"
+authors="Your Name"
+description='''
+An add-on mod for Roamers that adds:
+- Saplings given to roamers on spawn based on their biome variant
+- Pre-excavation sapling scattering within tree-chopping radius
+- Automatic replanting after chopping trees
+- Pity system: grants needed items after 2 minutes of being stuck
+'''
+
+# Dependency on NeoForge
+[[dependencies."roamersplus"]]
+modId="neoforge"
+type="required"
+versionRange="[21.0,)"
+ordering="NONE"
+side="BOTH"
+
+# Dependency on Minecraft
+[[dependencies."roamersplus"]]
+modId="minecraft"
+type="required"
+versionRange="[1.21.1,1.22)"
+ordering="NONE"
+side="BOTH"
+
+# Dependency on Roamers mod
+[[dependencies."roamersplus"]]
+modId="roamers"
+type="required"
+versionRange="[2.0,)"
+ordering="AFTER"
+side="BOTH"
