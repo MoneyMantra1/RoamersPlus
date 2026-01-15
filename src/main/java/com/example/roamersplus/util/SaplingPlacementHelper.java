@@ -132,48 +132,67 @@ if (!hasAnySaplings) {
         RoamersPlusMod.LOGGER.debug("Placed {} saplings total", totalPlaced);
         
         // Apply bonemeal to placed saplings
+        // Each sapling gets up to 3 bonemeal applications to help them grow faster
         if (bonemealStack != null && !bonemealStack.isEmpty() && level instanceof ServerLevel serverLevel) {
             int bonemealUsed = 0;
+            int bonemealPerSapling = 3; // Apply multiple bonemeal to help growth
+            
             for (BlockPos saplingPos : placedSaplingPositions) {
                 if (bonemealStack.isEmpty() || bonemealStack.getCount() <= 0) {
                     break;
                 }
                 
-                BlockState state = level.getBlockState(saplingPos);
-                if (state.getBlock() instanceof SaplingBlock saplingBlock) {
+                // Apply bonemeal multiple times per sapling (up to bonemealPerSapling times)
+                for (int i = 0; i < bonemealPerSapling && bonemealStack.getCount() > 0; i++) {
+                    BlockState state = level.getBlockState(saplingPos);
+                    
+                    // Stop if sapling is gone (grew into tree)
+                    if (!(state.getBlock() instanceof SaplingBlock)) {
+                        break;
+                    }
+                    
                     // Apply bonemeal effect
-                    if (applyBonemealToSapling(serverLevel, saplingPos, saplingBlock)) {
+                    if (applyBonemealToSapling(serverLevel, saplingPos, null)) {
                         bonemealStack.shrink(1);
                         bonemealUsed++;
                     }
                 }
             }
-            RoamersPlusMod.LOGGER.debug("Used {} bonemeal on saplings", bonemealUsed);
+            RoamersPlusMod.LOGGER.debug("Used {} bonemeal on {} saplings", bonemealUsed, placedSaplingPositions.size());
         }
     }
     
     /**
      * Applies bonemeal effect to a sapling, potentially growing it into a tree.
+     * Always returns true if bonemeal was applied (sapling existed), regardless of whether tree grew.
+     * This ensures bonemeal is consumed on each application attempt.
+     *
+     * @param level The server level
+     * @param pos The sapling position
+     * @param sapling The sapling block type (can be null to auto-detect)
+     * @return true if bonemeal was applied, false if no sapling at position
      */
-    /**
- * Applies bonemeal effect to a sapling in a more "visible" way: it will attempt to grow the sapling
- * and will only keep trying (consuming bonemeal) while the block remains a sapling.
- *
- * Vanilla bonemeal is chance-based; this helper is intentionally more proactive so roamers reliably
- * grow trees when they have bonemeal available.
- */
-private static boolean applyBonemealToSapling(ServerLevel level, BlockPos pos, SaplingBlock sapling) {
-    BlockState state = level.getBlockState(pos);
-    if (!(state.getBlock() instanceof SaplingBlock current) || current != sapling) {
-        return false;
+    private static boolean applyBonemealToSapling(ServerLevel level, BlockPos pos, SaplingBlock sapling) {
+        BlockState state = level.getBlockState(pos);
+        
+        // Auto-detect sapling if not specified
+        if (!(state.getBlock() instanceof SaplingBlock currentSapling)) {
+            return false;
+        }
+        
+        // If specific sapling was requested, verify it matches
+        if (sapling != null && currentSapling != sapling) {
+            return false;
+        }
+        
+        // Apply bonemeal effect - advanceTree handles the growth stage advancement
+        // This mimics what BoneMealItem does internally
+        currentSapling.advanceTree(level, pos, state, level.random);
+        
+        // Always return true since we applied the effect - bonemeal should be consumed
+        // The tree may or may not have grown, but the bonemeal was used
+        return true;
     }
-
-    // Attempt to grow. advanceTree will replace the sapling with a tree when successful.
-    sapling.advanceTree(level, pos, state, level.random);
-
-    // If it's no longer a sapling, we successfully grew (or at least changed) the block.
-    return !(level.getBlockState(pos).getBlock() instanceof SaplingBlock);
-}
 
     
     /**
@@ -351,28 +370,31 @@ public static int bonemealSaplingFromInventory(Level level, BlockPos pos, Contai
     }
 
     BlockState state = serverLevel.getBlockState(pos);
-    if (!(state.getBlock() instanceof SaplingBlock saplingBlock)) {
+    if (!(state.getBlock() instanceof SaplingBlock)) {
         return 0;
     }
 
     int used = 0;
     for (int attempt = 0; attempt < maxUses; attempt++) {
+        // Check if sapling still exists (might have grown from previous application)
+        if (!(serverLevel.getBlockState(pos).getBlock() instanceof SaplingBlock)) {
+            break; // Tree grew!
+        }
+        
         int slot = findFirstBonemealSlot(inventory);
         if (slot < 0) break;
 
         ItemStack bone = inventory.getItem(slot);
         if (bone.isEmpty() || bone.getItem() != Items.BONE_MEAL) break;
 
-        boolean grew = applyBonemealToSapling(serverLevel, pos, saplingBlock);
+        // Apply bonemeal - always consumes one regardless of growth
+        applyBonemealToSapling(serverLevel, pos, null);
 
         bone.shrink(1);
-        inventory.setItem(slot, bone);
-        used++;
-
-        // Stop early if the sapling is gone (tree grew).
-        if (grew || !(serverLevel.getBlockState(pos).getBlock() instanceof SaplingBlock)) {
-            break;
+        if (bone.isEmpty()) {
+            inventory.setItem(slot, ItemStack.EMPTY);
         }
+        used++;
     }
     return used;
 }
