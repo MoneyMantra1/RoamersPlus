@@ -319,6 +319,12 @@ public class RoamerEventHandler {
         if (invForBonemeal != null) {
             updateSaplingCountSnapshot(entity, invForBonemeal);
             processBonemealQueue(entity, entity.level(), invForBonemeal);
+            
+            // Rotate saplings in inventory every ~30 seconds so Roamers' PlantSaplingGoal uses different types
+            // This works around the base mod's single-sapling selection logic
+            if (entity.tickCount % 600 == 0) {
+                rotateSaplingsInInventory(entity, invForBonemeal);
+            }
         }
 
 
@@ -332,6 +338,44 @@ public class RoamerEventHandler {
         
         // Handle pity system
         handlePitySystem(entity);
+    }
+    
+    /**
+     * Rotates sapling stacks in the roamer's inventory so different types get used.
+     * This works around the base Roamers mod always selecting the first matching sapling.
+     */
+    private static void rotateSaplingsInInventory(Entity entity, Container inventory) {
+        // Find all sapling slots and their types
+        List<Integer> saplingSlots = new ArrayList<>();
+        List<ItemStack> saplingStacks = new ArrayList<>();
+        
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack stack = inventory.getItem(i);
+            if (stack.isEmpty()) continue;
+            
+            Item item = stack.getItem();
+            if (item instanceof BlockItem blockItem) {
+                if (blockItem.getBlock() instanceof SaplingBlock) {
+                    saplingSlots.add(i);
+                    saplingStacks.add(stack.copy());
+                }
+            }
+        }
+        
+        // Need at least 2 different sapling slots to rotate
+        if (saplingSlots.size() < 2) return;
+        
+        // Rotate: move first to end, shift others up
+        ItemStack first = saplingStacks.remove(0);
+        saplingStacks.add(first);
+        
+        // Apply rotated stacks back to inventory
+        for (int i = 0; i < saplingSlots.size(); i++) {
+            inventory.setItem(saplingSlots.get(i), saplingStacks.get(i));
+        }
+        
+        RoamersPlusMod.LOGGER.debug("Rotated {} sapling stacks in {}'s inventory", 
+            saplingSlots.size(), entity.getName().getString());
     }
     
     /**
@@ -590,49 +634,68 @@ public class RoamerEventHandler {
         List<BlockPos> queue = pendingBonemeal.get(entity);
         if (queue == null || queue.isEmpty()) return;
         
-        // Find bonemeal in inventory
-        int bonemealSlot = -1;
-        ItemStack bonemealStack = ItemStack.EMPTY;
-        for (int i = 0; i < inventory.getContainerSize(); i++) {
-            ItemStack stack = inventory.getItem(i);
-            if (!stack.isEmpty() && stack.getItem() == Items.BONE_MEAL) {
-                bonemealSlot = i;
-                bonemealStack = stack;
-                break;
-            }
-        }
+        if (!(level instanceof ServerLevel serverLevel)) return;
         
-        if (bonemealStack.isEmpty()) {
-            // No bonemeal available, clear queue
-            queue.clear();
-            return;
-        }
+        // Process up to 3 sapling positions per tick to avoid lag
+        int positionsProcessed = 0;
+        int bonemealUsed = 0;
+        int bonemealPerSapling = 2; // Apply 2 bonemeal per sapling per tick
         
-        // Process up to 3 saplings per tick to avoid lag
-        int processed = 0;
         Iterator<BlockPos> iter = queue.iterator();
-        while (iter.hasNext() && processed < 3 && !bonemealStack.isEmpty()) {
+        while (iter.hasNext() && positionsProcessed < 3) {
             BlockPos pos = iter.next();
             BlockState state = level.getBlockState(pos);
             
-            if (state.getBlock() instanceof SaplingBlock saplingBlock) {
-                // Apply bonemeal effect
-                if (level instanceof ServerLevel serverLevel) {
-                    // 45% chance to advance growth, like vanilla
-                    if (serverLevel.random.nextFloat() < 0.45f) {
-                        saplingBlock.advanceTree(serverLevel, pos, state, serverLevel.random);
+            // Check if still a sapling
+            if (!(state.getBlock() instanceof SaplingBlock saplingBlock)) {
+                iter.remove(); // Sapling is gone (grew or was broken)
+                continue;
+            }
+            
+            // Apply bonemeal multiple times to this sapling
+            for (int i = 0; i < bonemealPerSapling; i++) {
+                // Find bonemeal in inventory (search each time as slot contents may change)
+                int bonemealSlot = -1;
+                ItemStack bonemealStack = ItemStack.EMPTY;
+                for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
+                    ItemStack stack = inventory.getItem(slot);
+                    if (!stack.isEmpty() && stack.getItem() == Items.BONE_MEAL) {
+                        bonemealSlot = slot;
+                        bonemealStack = stack;
+                        break;
                     }
-                    bonemealStack.shrink(1);
-                    processed++;
-                    RoamersPlusMod.LOGGER.debug("Applied bonemeal to sapling at {}", pos);
+                }
+                
+                if (bonemealStack.isEmpty()) {
+                    // No more bonemeal, clear entire queue
+                    queue.clear();
+                    RoamersPlusMod.LOGGER.debug("Roamer ran out of bonemeal, used {} total", bonemealUsed);
+                    return;
+                }
+                
+                // Check if sapling still exists (might have grown from previous bonemeal)
+                if (!(level.getBlockState(pos).getBlock() instanceof SaplingBlock)) {
+                    break; // Tree grew!
+                }
+                
+                // Apply bonemeal
+                saplingBlock.advanceTree(serverLevel, pos, level.getBlockState(pos), serverLevel.random);
+                bonemealStack.shrink(1);
+                bonemealUsed++;
+                
+                // Update inventory slot if stack is empty
+                if (bonemealStack.isEmpty()) {
+                    inventory.setItem(bonemealSlot, ItemStack.EMPTY);
                 }
             }
+            
             iter.remove();
+            positionsProcessed++;
         }
         
-        // Update inventory if bonemeal was used
-        if (bonemealSlot >= 0 && bonemealStack.isEmpty()) {
-            inventory.setItem(bonemealSlot, ItemStack.EMPTY);
+        if (bonemealUsed > 0) {
+            RoamersPlusMod.LOGGER.debug("Applied {} bonemeal to saplings ({} positions processed)", 
+                bonemealUsed, positionsProcessed);
         }
     }
     
