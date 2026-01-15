@@ -45,9 +45,10 @@ public class SaplingHelper {
     /**
      * Gets the list of saplings for a given race.
      * @param raceName The race name (e.g., "PLAINS", "TAIGA")
-     * @return List of sapling items, or empty list if race doesn't use wood
+     * @return List of sapling items, or empty list if race doesn't use wood or raceName is null
      */
     public static List<Item> getSaplingsForRace(String raceName) {
+        if (raceName == null) return Collections.emptyList();
         return RACE_SAPLINGS.getOrDefault(raceName.toUpperCase(), Collections.emptyList());
     }
     
@@ -78,9 +79,10 @@ public class SaplingHelper {
     /**
      * Checks if a race uses wood for building.
      * @param raceName The race name
-     * @return true if the race uses wood, false otherwise
+     * @return true if the race uses wood, false otherwise (including if raceName is null)
      */
     public static boolean raceUsesWood(String raceName) {
+        if (raceName == null) return false;
         List<Item> saplings = RACE_SAPLINGS.get(raceName.toUpperCase());
         return saplings != null && !saplings.isEmpty();
     }
