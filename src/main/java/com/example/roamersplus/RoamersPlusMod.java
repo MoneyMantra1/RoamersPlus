@@ -33,8 +33,9 @@ public class RoamersPlusMod {
     
     @SubscribeEvent
     public void onServerStopped(ServerStoppedEvent event) {
-        // Clean up pity system to prevent memory leaks
+        // Clean up all tracking systems to prevent memory leaks
         PitySystem.cleanup();
+        RoamerEventHandler.cleanup();
         LOGGER.info("RoamersPlus cleanup complete");
     }
 }
