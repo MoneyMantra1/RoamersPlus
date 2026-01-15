@@ -29,6 +29,8 @@ public class SaplingPlacementHelper {
      * Scatters multiple types of saplings, alternating between them for even distribution.
      * Also applies bonemeal to placed saplings if available.
      * 
+     * Safety: Limits placement to MAX_SCATTER_SAPLINGS to prevent lag with large stacks.
+     * 
      * @param level The world level
      * @param centerPos Center position (usually roamer's home/campfire)
      * @param radius The radius to scatter within
@@ -40,6 +42,9 @@ public class SaplingPlacementHelper {
         if (level.isClientSide() || saplingStacks.isEmpty()) {
             return;
         }
+        
+        // Safety: Maximum saplings to place in one scatter operation
+        final int MAX_SCATTER_SAPLINGS = 32;
         
         // Group stacks by sapling *type* (not by slot) so alternation actually alternates between sapling types.
         java.util.LinkedHashMap<Block, List<ItemStack>> stacksByBlock = new java.util.LinkedHashMap<>();
@@ -75,6 +80,12 @@ public class SaplingPlacementHelper {
         int totalPlaced = 0;
         
         for (BlockPos basePos : potentialPositions) {
+            // Safety: Stop if we've placed enough saplings
+            if (totalPlaced >= MAX_SCATTER_SAPLINGS) {
+                RoamersPlusMod.LOGGER.debug("Reached max scatter limit of {} saplings", MAX_SCATTER_SAPLINGS);
+                break;
+            }
+            
             // Check if we still have saplings to place
             boolean hasAnySaplings = false;
             for (List<ItemStack> stacks : stacksByType) {
@@ -237,6 +248,18 @@ if (!hasAnySaplings) {
             }
         }
         return null;
+    }
+    
+    /**
+     * Public wrapper for findValidSaplingPosition.
+     * Finds a valid position to place a sapling near the given base position.
+     * 
+     * @param level The world level
+     * @param basePos The base position to search around
+     * @return A valid position for sapling placement, or null if none found
+     */
+    public static BlockPos findValidSaplingPositionPublic(Level level, BlockPos basePos) {
+        return findValidSaplingPosition(level, basePos);
     }
     
     /**
